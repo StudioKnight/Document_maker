@@ -13,6 +13,7 @@ A research-focused document editor built with React, Vite, and Tailwind CSS. It 
 - JSON/HTML export and JSON import
 - Print to PDF support
 - Autosave with browser localStorage
+- Persistent light/dark theme toggle
 - Responsive layout for desktop and smaller screens
 
 ## Getting started

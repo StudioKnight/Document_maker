@@ -79,7 +79,11 @@ function App() {
   const [referenceSearch, setReferenceSearch] = useState('');
   const [status, setStatus] = useState('Saved');
   const [searchValue, setSearchValue] = useState('');
+  const [activeRibbonTab, setActiveRibbonTab] = useState('Home');
+  const [zoom, setZoom] = useState(100);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('document-maker-theme') === 'dark');
   const editorRef = useRef(null);
+  const citationRangeRef = useRef(null);
 
   const activeDocument = useMemo(
     () => documents.find((document) => document.id === activeDocId) || documents[0] || null,
@@ -90,6 +94,10 @@ function App() {
     if (!activeDocument) return;
     writeActiveDocumentId(activeDocument.id);
   }, [activeDocument]);
+
+  useEffect(() => {
+    localStorage.setItem('document-maker-theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
 
   useEffect(() => {
     if (!documents.length) {
@@ -180,6 +188,15 @@ function App() {
       content: source.content,
     };
 
+    const referenceIdMap = new Map((source.references || []).map((ref, index) => [ref.id, copied.references[index].id]));
+    const parser = new DOMParser();
+    const copiedContent = parser.parseFromString(copied.content || '<p></p>', 'text/html');
+    copiedContent.querySelectorAll('[data-ref-id]').forEach((citation) => {
+      const copiedRefId = referenceIdMap.get(citation.dataset.refId);
+      if (copiedRefId) citation.dataset.refId = copiedRefId;
+    });
+    copied.content = copiedContent.body.innerHTML;
+
     const next = [...documents, copied];
     setDocuments(next);
     writeDocuments(next);
@@ -193,6 +210,13 @@ function App() {
 
     editor.focus();
     const selection = window.getSelection();
+    const savedRange = citationRangeRef.current;
+    if (savedRange && editor.contains(savedRange.commonAncestorContainer) && selection) {
+      selection.removeAllRanges();
+      selection.addRange(savedRange);
+    }
+    citationRangeRef.current = null;
+
     if (!selection || selection.rangeCount === 0) {
       editor.innerHTML = `${editor.innerHTML}${html}`;
       return editor.innerHTML;
@@ -231,6 +255,23 @@ function App() {
       return;
     }
 
+    const normalizeKey = (value) => value.trim().toLowerCase();
+    const existingReference = (activeDocument.references || []).find((reference) => {
+      if (normalized.url && reference.url) {
+        return normalizeKey(normalized.url) === normalizeKey(reference.url);
+      }
+      return normalizeKey(reference.title) === normalizeKey(normalized.title)
+        && normalizeKey(reference.author || '') === normalizeKey(normalized.author)
+        && normalizeKey(reference.website || '') === normalizeKey(normalized.website);
+    });
+
+    if (existingReference) {
+      insertCitation(existingReference);
+      setReferenceDialogOpen(false);
+      setReferenceDraft(null);
+      return;
+    }
+
     const nextReference = createReference(normalized);
     const refs = [...(activeDocument.references || []), nextReference];
     const nextDoc = renumberReferences({ ...activeDocument, references: refs });
@@ -244,7 +285,23 @@ function App() {
     setReferenceDraft(null);
   };
 
+  const insertCitation = (reference) => {
+    if (!activeDocument || !reference) return;
+    const number = getReferenceNumber(activeDocument, reference.id);
+    if (!number) return;
+    const citationId = `citation-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const citationMarkup = `<span class="citation" data-ref-id="${reference.id}" data-citation-id="${citationId}" contenteditable="false">[${number}]</span>&nbsp;`;
+    const updatedContent = insertHtmlAtCursor(citationMarkup);
+    persistDocument({ ...activeDocument, content: updatedContent, updatedAt: new Date().toISOString() });
+  };
+
   const openReferenceDialog = (reference = null) => {
+    if (!reference && editorRef.current) {
+      const selection = window.getSelection();
+      if (selection?.rangeCount && editorRef.current.contains(selection.anchorNode)) {
+        citationRangeRef.current = selection.getRangeAt(0).cloneRange();
+      }
+    }
     setEditingReferenceId(reference?.id || null);
     setReferenceDraft(reference || null);
     setReferenceDialogOpen(true);
@@ -284,6 +341,12 @@ function App() {
 
   const applyFormatting = (command, value = null) => {
     if (!editorRef.current) return;
+    const selection = window.getSelection();
+    if (citationRangeRef.current && selection) {
+      selection.removeAllRanges();
+      selection.addRange(citationRangeRef.current);
+    }
+    citationRangeRef.current = null;
     editorRef.current.focus();
     document.execCommand(command, false, value);
     const currentHtml = editorRef.current.innerHTML;
@@ -307,6 +370,23 @@ function App() {
   const handleUnderline = () => applyFormatting('underline');
   const handleStrike = () => applyFormatting('strikeThrough');
   const handleHorizontalRule = () => applyFormatting('insertHorizontalRule');
+  const handleFontSize = (size) => applyFormatting('fontSize', size);
+  const handleTextColor = (color) => applyFormatting('foreColor', color);
+
+  const handleHistoryCommand = (command) => {
+    if (!editorRef.current) return;
+    editorRef.current.focus();
+    document.execCommand(command);
+    const currentHtml = editorRef.current.innerHTML;
+    updateDocument((documentData) => ({ ...documentData, content: currentHtml, updatedAt: new Date().toISOString() }));
+  };
+
+  const captureEditorSelection = () => {
+    const selection = window.getSelection();
+    if (selection?.rangeCount && editorRef.current?.contains(selection.anchorNode)) {
+      citationRangeRef.current = selection.getRangeAt(0).cloneRange();
+    }
+  };
 
   const handleLinkInsert = () => {
     const url = window.prompt('Enter URL', 'https://');
@@ -395,10 +475,18 @@ function App() {
   const characterCount = activeDocument ? getCharacterCount(activeDocument.content) : 0;
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
+    <div className={`word-app ${isDarkMode ? 'theme-dark' : ''}`}>
       <Header
         documentTitle={activeDocument?.title || 'Untitled document'}
+        setTitle={handleDocumentTitleChange}
+        activeTab={activeRibbonTab}
+        onTabChange={setActiveRibbonTab}
+        saveStatus={status}
         onNewDocument={createNewDocument}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode((current) => !current)}
+        onUndo={() => handleHistoryCommand('undo')}
+        onRedo={() => handleHistoryCommand('redo')}
         onDashboard={() => setShowDashboard(true)}
         onExportJson={handleExportJson}
         onExportHtml={handleExportHtml}
@@ -406,6 +494,9 @@ function App() {
         onPrint={handlePrint}
         onToggleReferenceManager={() => setShowReferenceManager((value) => !value)}
         onOpenSample={handleOpenSample}
+        searchValue={searchValue}
+        onSearchChange={setSearchValue}
+        onFind={handleFind}
       />
 
       <input id="import-file" type="file" accept="application/json" className="hidden" onChange={handleImportJson} />
@@ -423,15 +514,12 @@ function App() {
         />
       ) : (
         <>
-          <div className="border-b border-slate-200 bg-white">
-            <div className="mx-auto max-w-6xl px-4 py-3 text-xs text-slate-500">
-              {status}
-            </div>
-            <Toolbar
-              canUndo={false}
-              canRedo={false}
-              onUndo={() => document.execCommand('undo')}
-              onRedo={() => document.execCommand('redo')}
+          <Toolbar
+              activeTab={activeRibbonTab}
+              canUndo
+              canRedo
+              onUndo={() => handleHistoryCommand('undo')}
+              onRedo={() => handleHistoryCommand('redo')}
               onBold={handleBold}
               onItalic={handleItalic}
               onUnderline={handleUnderline}
@@ -446,33 +534,40 @@ function App() {
               onOutdent={handleOutdent}
               onLink={handleLinkInsert}
               onInsertReference={() => openReferenceDialog()}
+              onPrepareInsertReference={captureEditorSelection}
               onInsertHorizontalRule={handleHorizontalRule}
-              onSearch={handleFind}
-              searchValue={searchValue}
-              onSearchChange={setSearchValue}
+              onPreserveSelection={captureEditorSelection}
+              onFontSize={handleFontSize}
+              onTextColor={handleTextColor}
               onFind={handleFind}
               wordCount={wordCount}
               characterCount={characterCount}
-              title={activeDocument.title}
-              setTitle={handleDocumentTitleChange}
-            />
-          </div>
+              onToggleReferenceManager={() => setShowReferenceManager((value) => !value)}
+          />
 
-          <div className={showReferenceManager ? 'grid gap-0 lg:grid-cols-[1fr_340px]' : ''}>
-            <main>
-              <Editor
-                editorRef={editorRef}
-                content={activeDocument.content || '<p></p>'}
-                onChange={handleEditorChange}
-                onClickCitation={handleCitationClick}
-              />
-              <ReferencesSection
-                document={activeDocument}
-                onJumpToCitation={jumpToCitation}
-                onEditReference={handleEditReference}
-                onDeleteReference={handleDeleteReference}
-                onOpenUrl={(url) => url && window.open(url, '_blank', 'noopener,noreferrer')}
-              />
+          <div className={`word-workspace ${showReferenceManager ? 'word-workspace--with-panel' : ''}`}>
+            <main className="word-editor-main">
+              <div className="vertical-ruler" aria-hidden="true">
+                <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span>
+              </div>
+              <div className="page-column" style={{ zoom: `${zoom}%` }}>
+                <div className="horizontal-ruler" aria-hidden="true">
+                  <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span>
+                </div>
+                <Editor
+                  editorRef={editorRef}
+                  content={activeDocument.content || '<p></p>'}
+                  onChange={handleEditorChange}
+                  onClickCitation={handleCitationClick}
+                />
+                <ReferencesSection
+                  document={activeDocument}
+                  onJumpToCitation={jumpToCitation}
+                  onEditReference={handleEditReference}
+                  onDeleteReference={handleDeleteReference}
+                  onOpenUrl={(url) => url && window.open(url, '_blank', 'noopener,noreferrer')}
+                />
+              </div>
             </main>
 
             {showReferenceManager && (
@@ -485,9 +580,20 @@ function App() {
                 onDeleteReference={handleDeleteReference}
                 onOpenUrl={(url) => url && window.open(url, '_blank', 'noopener,noreferrer')}
                 onJumpToCitation={(refId, citationId) => jumpToCitation(refId, citationId)}
+                onInsertCitation={insertCitation}
+                onPrepareInsertCitation={captureEditorSelection}
               />
             )}
           </div>
+          <footer className="word-statusbar">
+            <div className="word-statusbar__left"><span>Page 1 of 1</span><span>{wordCount} words</span><span>English (United States)</span><span>{status}</span></div>
+            <div className="word-statusbar__zoom">
+              <button onClick={() => setZoom((current) => Math.max(70, current - 10))} aria-label="Zoom out">−</button>
+              <input aria-label="Zoom" type="range" min="70" max="130" step="10" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />
+              <button onClick={() => setZoom((current) => Math.min(130, current + 10))} aria-label="Zoom in">＋</button>
+              <span>{zoom}%</span>
+            </div>
+          </footer>
         </>
       )}
 
@@ -498,6 +604,7 @@ function App() {
           setReferenceDialogOpen(false);
           setReferenceDraft(null);
           setEditingReferenceId(null);
+          citationRangeRef.current = null;
         }}
         onSave={handleReferenceSave}
       />

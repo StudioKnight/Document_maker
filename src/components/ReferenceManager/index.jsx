@@ -1,4 +1,4 @@
-export default function ReferenceManager({ references, search, onSearchChange, onAddReference, onEditReference, onDeleteReference, onOpenUrl, onJumpToCitation }) {
+export default function ReferenceManager({ references, search, onSearchChange, onAddReference, onEditReference, onDeleteReference, onOpenUrl, onJumpToCitation, onInsertCitation, onPrepareInsertCitation }) {
   const filtered = references.filter((ref) => {
     const haystack = `${ref.title} ${ref.author} ${ref.website} ${ref.notes}`.toLowerCase();
     return haystack.includes(search.toLowerCase());
@@ -43,6 +43,7 @@ export default function ReferenceManager({ references, search, onSearchChange, o
 
               <div className="mt-3 flex flex-wrap gap-2">
                 <button onClick={() => onJumpToCitation(ref.id)} className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50">Jump</button>
+                <button onMouseDown={onPrepareInsertCitation} onClick={() => onInsertCitation(ref)} className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100">Cite</button>
                 <button onClick={() => onEditReference(ref)} className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50">Edit</button>
                 <button onClick={() => onOpenUrl(ref.url)} className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50" disabled={!ref.url}>Open</button>
                 <button onClick={() => onDeleteReference(ref.id)} className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100">Delete</button>

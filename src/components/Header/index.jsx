@@ -1,35 +1,89 @@
-export default function Header({ documentTitle, onNewDocument, onDashboard, onExportJson, onExportHtml, onImportJson, onPrint, onToggleReferenceManager, onOpenSample }) {
+const tabs = ['File', 'Home', 'Insert', 'Layout', 'References', 'Review', 'View'];
+
+export default function Header({
+  documentTitle,
+  setTitle,
+  activeTab,
+  onTabChange,
+  saveStatus,
+  onNewDocument,
+  isDarkMode,
+  onToggleDarkMode,
+  onUndo,
+  onRedo,
+  onDashboard,
+  onExportJson,
+  onExportHtml,
+  onImportJson,
+  onPrint,
+  onToggleReferenceManager,
+  onOpenSample,
+  searchValue,
+  onSearchChange,
+  onFind,
+}) {
   return (
-    <header className="border-b border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-4 px-4 py-3">
-        <div className="flex items-center gap-4">
-          <button onClick={onDashboard} className="rounded bg-slate-100 px-3 py-2 text-sm font-medium hover:bg-slate-200">Home</button>
-          <div className="text-sm text-slate-600">Documents</div>
+    <header className="word-header">
+      <div className="word-titlebar">
+        <div className="word-quick-access">
+          <button onClick={onDashboard} title="My documents" aria-label="My documents">⌂</button>
+          <button onClick={onUndo} title="Undo" aria-label="Undo">↶</button>
+          <button onClick={onRedo} title="Redo" aria-label="Redo">↷</button>
+          <span className="quick-access-divider" />
+          <span className="word-app-mark" aria-hidden="true">W</span>
         </div>
 
-        <div className="hidden items-center gap-3 text-sm text-slate-600 md:flex">
-          <button className="nav-item">File</button>
-          <button className="nav-item">Edit</button>
-          <button className="nav-item">View</button>
-          <button className="nav-item">Insert</button>
-          <button className="nav-item">Format</button>
-          <button className="nav-item">Tools</button>
-          <button className="nav-item">Help</button>
-        </div>
+        <input
+          className="word-document-name"
+          value={documentTitle || ''}
+          onChange={(event) => setTitle(event.target.value)}
+          aria-label="Document title"
+          placeholder="Untitled document"
+        />
+        <span className="word-title-suffix">- Word</span>
 
-        <div className="flex items-center gap-2">
-          <button onClick={onNewDocument} className="bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">New</button>
-          <button onClick={onOpenSample} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Sample</button>
-          <button onClick={onExportJson} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Export JSON</button>
-          <button onClick={onExportHtml} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Export HTML</button>
-          <button onClick={onImportJson} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Import JSON</button>
-          <button onClick={onPrint} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">Print</button>
-          <button onClick={onToggleReferenceManager} className="rounded border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">References</button>
+        <label className="word-command-search">
+          <span aria-hidden="true">⌕</span>
+          <input value={searchValue} onChange={(event) => onSearchChange(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && onFind()} placeholder="Tell me what you want to do" />
+        </label>
+
+        <span className="word-save-status"><span aria-hidden="true">✓</span> {saveStatus}</span>
+        <button
+          className="word-theme-toggle"
+          onClick={onToggleDarkMode}
+          title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-pressed={isDarkMode}
+        >
+          {isDarkMode ? '☀' : '☾'}
+        </button>
+        <button className="word-share-button" onClick={onNewDocument}>＋ New</button>
+      </div>
+
+      <nav className="word-tabs" aria-label="Document tools">
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            className={`word-tab ${activeTab === tab ? 'is-active' : ''} ${tab === 'File' ? 'word-tab--file' : ''}`}
+            onClick={() => tab === 'File' ? onDashboard() : onTabChange(tab)}
+          >
+            {tab}
+          </button>
+        ))}
+        <div className="word-tab-actions">
+          <button onClick={onToggleReferenceManager} title="Toggle references panel">References panel</button>
+          <details className="word-file-menu">
+            <summary aria-label="File actions" title="File actions">•••</summary>
+            <div className="word-file-menu__items">
+              <button onClick={onOpenSample}>Open sample</button>
+              <button onClick={onImportJson}>Import JSON</button>
+              <button onClick={onExportJson}>Export JSON</button>
+              <button onClick={onExportHtml}>Export HTML</button>
+              <button onClick={onPrint}>Print / Save as PDF</button>
+            </div>
+          </details>
         </div>
-      </div>
-      <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
-        {documentTitle || 'Untitled document'}
-      </div>
+      </nav>
     </header>
   );
 }

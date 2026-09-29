@@ -182,23 +182,83 @@ export function deserializeDocument(data) {
 }
 
 export function exportDocumentAsHtml(doc) {
-  const referencesHtml = (doc.references || []).map((ref) => {
-    const number = getReferenceNumber(doc, ref.id);
-    const urlDisplay = ref.url ? `<a href="${ref.url}" target="_blank" rel="noreferrer">${ref.url}</a>` : '';
-    return `<p id="reference-${number}"><strong>[${number}]</strong> ${ref.author ? `${ref.author}. ` : ''}${ref.title ? `"${ref.title}."` : ''} ${ref.website ? `${ref.website}. ` : ''}${urlDisplay}</p>`;
-  }).join('');
+  const references = doc.references || [];
+  const citationDoc = new DOMParser().parseFromString(doc.content || '<p></p>', 'text/html');
+  const citationCounts = new Map();
+  const referenceNumbers = new Map(references.map((ref, index) => [ref.id, index + 1]));
+
+  citationDoc.querySelectorAll('[data-ref-id]').forEach((citation) => {
+    const refId = citation.dataset.refId;
+    const number = referenceNumbers.get(refId);
+    if (!number) {
+      citation.remove();
+      return;
+    }
+
+    const occurrence = (citationCounts.get(refId) || 0) + 1;
+    citationCounts.set(refId, occurrence);
+    const citationId = citation.dataset.citationId || `citation-${number}-${occurrence}`;
+    const link = citationDoc.createElement('a');
+    link.id = citationId;
+    link.href = `#reference-${number}`;
+    link.textContent = `[${number}]`;
+    citation.replaceWith(link);
+  });
+
+  const formatDate = (value) => {
+    if (!value) return '';
+    const date = new Date(`${value}T00:00:00`);
+    return Number.isNaN(date.getTime())
+      ? escapeHtml(value)
+      : escapeHtml(date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
+  };
+  const safeUrl = (value) => {
+    try {
+      const url = new URL(value);
+      return ['http:', 'https:'].includes(url.protocol) ? escapeHtml(url.href) : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const referencesHtml = references.map((ref, index) => {
+    const number = index + 1;
+    const backlinks = [...citationDoc.querySelectorAll(`[id][href="#reference-${number}"]`)]
+      .map((citation, occurrenceIndex) => `<a href="#${escapeHtml(citation.id)}" aria-label="Return to citation ${occurrenceIndex + 1}">^<sup>${occurrenceIndex + 1}</sup></a>`)
+      .join(' ');
+    const url = safeUrl(ref.url || '');
+    const title = ref.title
+      ? (url ? `<a href="${url}" target="_blank" rel="noreferrer">&ldquo;${escapeHtml(ref.title)}&rdquo; ↗</a>` : `&ldquo;${escapeHtml(ref.title)}&rdquo;`)
+      : '';
+    const author = ref.author ? escapeHtml(ref.author) : '';
+    const datedAuthor = author ? `${author}${ref.publicationDate ? ` (${formatDate(ref.publicationDate)})` : ''}. ` : '';
+    const website = ref.website ? `<cite>${escapeHtml(ref.website)}</cite>. ` : '';
+    const retrieved = ref.accessDate ? `Retrieved ${formatDate(ref.accessDate)}.` : '';
+    const titleSeparator = title && ref.website ? '. ' : '';
+
+    return `<li id="reference-${number}"><span class="ref-number">${number}.</span> ${backlinks} ${datedAuthor}${title}${titleSeparator}${website}${retrieved}</li>`;
+  }).join('\n');
 
   return `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
     <title>${escapeHtml(doc.title)}</title>
+    <style>
+      body { max-width: 760px; margin: 48px auto; padding: 0 24px; color: #111; font: 16px/1.65 Georgia, serif; }
+      .ref-number { display: inline-block; width: 1.5em; text-align: right; margin-right: .25em; }
+      ol { list-style: none; padding: 0; }
+      li { padding-left: 2em; text-indent: -2em; margin: .45em 0; }
+      a { color: #0645ad; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      @media print { body { margin: 0 auto; } }
+    </style>
   </head>
   <body>
     <h1>${escapeHtml(doc.title)}</h1>
-    <div>${doc.content}</div>
+    <div>${citationDoc.body.innerHTML}</div>
     <h2>References</h2>
-    ${referencesHtml}
+    <ol>${referencesHtml}</ol>
   </body>
 </html>`;
 }

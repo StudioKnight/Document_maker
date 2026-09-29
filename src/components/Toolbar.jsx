@@ -28,12 +28,12 @@ export default function Toolbar({
   setTitle,
 }) {
   return (
-    <div className="border-b border-slate-200 bg-white">
+    <div className="document-toolbar border-b border-slate-200 bg-white">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <input
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          className="w-full max-w-md border border-slate-200 bg-slate-50 px-3 py-2 text-lg font-semibold outline-none focus:border-blue-500"
+          className="document-toolbar__title w-full max-w-md border border-slate-200 bg-slate-50 px-3 py-2 text-lg font-semibold outline-none focus:border-blue-500"
           placeholder="Document title"
         />
         <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -65,15 +65,15 @@ export default function Toolbar({
         <button onClick={onInsertNumberedList} className="toolbar-button">Numbers</button>
         <button onClick={onLink} className="toolbar-button">Link</button>
         <button onClick={onInsertHorizontalRule} className="toolbar-button">Line</button>
-        <button onClick={onInsertReference} className="toolbar-button bg-blue-600 text-white hover:bg-blue-500">Insert Reference</button>
+        <button onClick={onInsertReference} className="toolbar-button bg-blue-600 hover:bg-blue-500">Insert Reference</button>
       </div>
 
-      <div className="flex items-center gap-2 border-t border-slate-200 px-4 py-2">
+      <div className="document-toolbar__search-row flex items-center gap-2 border-t border-slate-200 px-4 py-2">
         <input
           value={searchValue}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Search in document"
-          className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-1.5 outline-none focus:border-blue-500"
+          className="document-toolbar__search w-full rounded border border-slate-200 bg-slate-50 px-3 py-1.5 outline-none focus:border-blue-500"
         />
         <button onClick={onFind} className="toolbar-button">Find</button>
       </div>
