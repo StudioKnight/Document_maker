@@ -22,6 +22,18 @@ import {
 } from './utils/documentUtils';
 import { readActiveDocumentId, readDocuments, writeActiveDocumentId, writeDocuments } from './storage/documentStorage';
 
+function createBlankDocument(title = 'Document1') {
+  const now = new Date().toISOString();
+  return {
+    id: `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    title,
+    content: '<p></p>',
+    references: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function createSampleDocument() {
   const createdAt = new Date().toISOString();
   return {
@@ -64,9 +76,9 @@ function App() {
     const existing = readDocuments();
     if (existing.length > 0) return existing.map(ensureReferenceIds);
 
-    const sample = createSampleDocument();
-    writeDocuments([sample]);
-    return [sample];
+    const blankDocument = createBlankDocument('Document1');
+    writeDocuments([blankDocument]);
+    return [blankDocument];
   }, []);
 
   const [documents, setDocuments] = useState(initialDocuments);
@@ -78,12 +90,15 @@ function App() {
   const [editingReferenceId, setEditingReferenceId] = useState(null);
   const [referenceSearch, setReferenceSearch] = useState('');
   const [status, setStatus] = useState('Saved');
-  const [searchValue, setSearchValue] = useState('');
   const [activeRibbonTab, setActiveRibbonTab] = useState('Home');
   const [zoom, setZoom] = useState(100);
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('document-maker-theme') === 'dark');
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('document-maker-theme');
+    return saved ? saved === 'dark' : true;
+  });
   const editorRef = useRef(null);
   const citationRangeRef = useRef(null);
+  const formatPainterRef = useRef(null);
 
   const activeDocument = useMemo(
     () => documents.find((document) => document.id === activeDocId) || documents[0] || null,
@@ -101,10 +116,10 @@ function App() {
 
   useEffect(() => {
     if (!documents.length) {
-      const sample = createSampleDocument();
-      setDocuments([sample]);
-      setActiveDocId(sample.id);
-      writeDocuments([sample]);
+      const blankDocument = createBlankDocument('Document1');
+      setDocuments([blankDocument]);
+      setActiveDocId(blankDocument.id);
+      writeDocuments([blankDocument]);
       return;
     }
 
@@ -147,7 +162,8 @@ function App() {
   };
 
   const createNewDocument = () => {
-    const newDoc = createDocument({ title: 'Untitled document' });
+    const nextIndex = documents.length + 1;
+    const newDoc = createDocument({ title: `Document${nextIndex}` });
     setDocuments((previous) => {
       const next = [...previous, newDoc];
       writeDocuments(next);
@@ -339,8 +355,8 @@ function App() {
     }
   };
 
-  const applyFormatting = (command, value = null) => {
-    if (!editorRef.current) return;
+  const restoreEditorSelection = () => {
+    if (!editorRef.current) return null;
     const selection = window.getSelection();
     if (citationRangeRef.current && selection) {
       selection.removeAllRanges();
@@ -348,18 +364,24 @@ function App() {
     }
     citationRangeRef.current = null;
     editorRef.current.focus();
+    return selection;
+  };
+
+  const applyFormatting = (command, value = null) => {
+    if (!editorRef.current) return;
+    restoreEditorSelection();
     document.execCommand(command, false, value);
     const currentHtml = editorRef.current.innerHTML;
     updateDocument((documentData) => ({ ...documentData, content: currentHtml, updatedAt: new Date().toISOString() }));
   };
 
   const handleHeading = (value) => {
-    if (!value) return;
-    applyFormatting('formatBlock', value);
+    applyFormatting('formatBlock', value || 'p');
   };
 
   const handleInsertList = () => applyFormatting('insertUnorderedList');
   const handleInsertNumberedList = () => applyFormatting('insertOrderedList');
+  const handleFontFamily = (family) => applyFormatting('fontName', family);
   const handleAlignLeft = () => applyFormatting('justifyLeft');
   const handleAlignCenter = () => applyFormatting('justifyCenter');
   const handleAlignRight = () => applyFormatting('justifyRight');
@@ -388,16 +410,125 @@ function App() {
     }
   };
 
+  const handleCut = () => {
+    const selection = restoreEditorSelection();
+    if (!selection?.toString() || !editorRef.current) return;
+    document.execCommand('cut');
+    const currentHtml = editorRef.current.innerHTML;
+    updateDocument((documentData) => ({ ...documentData, content: currentHtml, updatedAt: new Date().toISOString() }));
+  };
+
+  const handleCopy = () => {
+    const selection = restoreEditorSelection();
+    if (selection?.toString()) document.execCommand('copy');
+  };
+
+  const handlePaste = async () => {
+    if (!editorRef.current) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      restoreEditorSelection();
+      document.execCommand('insertText', false, text);
+      const currentHtml = editorRef.current.innerHTML;
+      updateDocument((documentData) => ({ ...documentData, content: currentHtml, updatedAt: new Date().toISOString() }));
+    } catch {
+      window.alert('Clipboard access is unavailable. You can also paste with Ctrl+V while the document is focused.');
+    }
+  };
+
+  const handleFormatPainter = () => {
+    const selection = restoreEditorSelection();
+    if (!editorRef.current || !selection || selection.isCollapsed) return;
+
+    if (!formatPainterRef.current) {
+      const range = selection.getRangeAt(0);
+      const sourceNode = range.startContainer.nodeType === Node.ELEMENT_NODE
+        ? range.startContainer
+        : range.startContainer.parentElement;
+      const style = window.getComputedStyle(sourceNode || editorRef.current);
+      formatPainterRef.current = {
+        color: style.color,
+        fontFamily: style.fontFamily,
+        fontSize: style.fontSize,
+        fontWeight: style.fontWeight,
+        fontStyle: style.fontStyle,
+        textDecoration: style.textDecoration,
+      };
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const formattedText = document.createElement('span');
+    Object.assign(formattedText.style, formatPainterRef.current);
+    formattedText.appendChild(range.extractContents());
+    range.insertNode(formattedText);
+    selection.removeAllRanges();
+    const formattedRange = document.createRange();
+    formattedRange.selectNodeContents(formattedText);
+    selection.addRange(formattedRange);
+    formatPainterRef.current = null;
+    const currentHtml = editorRef.current.innerHTML;
+    updateDocument((documentData) => ({ ...documentData, content: currentHtml, updatedAt: new Date().toISOString() }));
+  };
+
+  const selectTextInEditor = (searchText) => {
+    const editor = editorRef.current;
+    const query = searchText.trim().toLowerCase();
+    if (!editor || !query) return false;
+
+    editor.focus();
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let textNode = walker.nextNode();
+    while (textNode) {
+      if (!textNode.parentElement?.closest('.citation')) {
+        const start = textNode.textContent.toLowerCase().indexOf(query);
+        if (start >= 0) {
+          const range = document.createRange();
+          range.setStart(textNode, start);
+          range.setEnd(textNode, start + query.length);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          return true;
+        }
+      }
+      textNode = walker.nextNode();
+    }
+    return false;
+  };
+
+  const handleFindText = (searchText) => {
+    if (!selectTextInEditor(searchText)) window.alert('Text not found.');
+  };
+
+  const handleReplaceText = (searchText, replacementText) => {
+    if (!selectTextInEditor(searchText)) return;
+    const selection = window.getSelection();
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    if (replacementText) range.insertNode(document.createTextNode(replacementText));
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const currentHtml = editorRef.current.innerHTML;
+    updateDocument((documentData) => ({ ...documentData, content: currentHtml, updatedAt: new Date().toISOString() }));
+  };
+
+  const handleSelectAll = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+
   const handleLinkInsert = () => {
     const url = window.prompt('Enter URL', 'https://');
     if (!url) return;
     applyFormatting('createLink', url);
-  };
-
-  const handleFind = () => {
-    if (searchValue.trim()) {
-      window.find(searchValue.trim());
-    }
   };
 
   const handleEditorChange = (html) => {
@@ -462,6 +593,11 @@ function App() {
     window.print();
   };
 
+  const handleSave = () => {
+    writeDocuments(documents);
+    setStatus('Saved');
+  };
+
   const handleOpenSample = () => {
     const sample = createSampleDocument();
     const next = [...documents, sample];
@@ -488,15 +624,13 @@ function App() {
         onUndo={() => handleHistoryCommand('undo')}
         onRedo={() => handleHistoryCommand('redo')}
         onDashboard={() => setShowDashboard(true)}
+        onSave={handleSave}
         onExportJson={handleExportJson}
         onExportHtml={handleExportHtml}
         onImportJson={() => document.getElementById('import-file')?.click()}
         onPrint={handlePrint}
         onToggleReferenceManager={() => setShowReferenceManager((value) => !value)}
         onOpenSample={handleOpenSample}
-        searchValue={searchValue}
-        onSearchChange={setSearchValue}
-        onFind={handleFind}
       />
 
       <input id="import-file" type="file" accept="application/json" className="hidden" onChange={handleImportJson} />
@@ -518,8 +652,15 @@ function App() {
               activeTab={activeRibbonTab}
               canUndo
               canRedo
+              onCut={handleCut}
+              onCopy={handleCopy}
+              onPaste={handlePaste}
+              onFormatPainter={handleFormatPainter}
               onUndo={() => handleHistoryCommand('undo')}
               onRedo={() => handleHistoryCommand('redo')}
+              onFontFamily={handleFontFamily}
+              onFontSize={handleFontSize}
+              onTextColor={handleTextColor}
               onBold={handleBold}
               onItalic={handleItalic}
               onUnderline={handleUnderline}
@@ -537,11 +678,10 @@ function App() {
               onPrepareInsertReference={captureEditorSelection}
               onInsertHorizontalRule={handleHorizontalRule}
               onPreserveSelection={captureEditorSelection}
-              onFontSize={handleFontSize}
-              onTextColor={handleTextColor}
-              onFind={handleFind}
-              wordCount={wordCount}
-              characterCount={characterCount}
+              onFind={handleFindText}
+              onReplace={handleReplaceText}
+              onSelectAll={handleSelectAll}
+              onPrint={handlePrint}
               onToggleReferenceManager={() => setShowReferenceManager((value) => !value)}
           />
 

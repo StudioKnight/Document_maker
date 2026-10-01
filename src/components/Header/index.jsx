@@ -12,42 +12,34 @@ export default function Header({
   onUndo,
   onRedo,
   onDashboard,
+  onSave,
   onExportJson,
   onExportHtml,
   onImportJson,
   onPrint,
   onToggleReferenceManager,
   onOpenSample,
-  searchValue,
-  onSearchChange,
-  onFind,
 }) {
   return (
     <header className="word-header">
       <div className="word-titlebar">
         <div className="word-quick-access">
-          <button onClick={onDashboard} title="My documents" aria-label="My documents">⌂</button>
+          <button onClick={onSave} title="Save document" aria-label="Save document">💾</button>
           <button onClick={onUndo} title="Undo" aria-label="Undo">↶</button>
           <button onClick={onRedo} title="Redo" aria-label="Redo">↷</button>
           <span className="quick-access-divider" />
-          <span className="word-app-mark" aria-hidden="true">W</span>
         </div>
 
-        <input
-          className="word-document-name"
-          value={documentTitle || ''}
-          onChange={(event) => setTitle(event.target.value)}
-          aria-label="Document title"
-          placeholder="Untitled document"
-        />
-        <span className="word-title-suffix">- Word</span>
-
-        <label className="word-command-search">
-          <span aria-hidden="true">⌕</span>
-          <input value={searchValue} onChange={(event) => onSearchChange(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && onFind()} placeholder="Tell me what you want to do" />
-        </label>
-
-        <span className="word-save-status"><span aria-hidden="true">✓</span> {saveStatus}</span>
+        <div className="word-titlebar-center">
+          <input
+            className="word-document-name"
+            value={documentTitle || ''}
+            onChange={(event) => setTitle(event.target.value)}
+            aria-label="Document title"
+            placeholder="Document1"
+          />
+          <span className="word-save-status"><span aria-hidden="true">✓</span> {saveStatus}</span>
+        </div>
         <button
           className="word-theme-toggle"
           onClick={onToggleDarkMode}
@@ -57,7 +49,11 @@ export default function Header({
         >
           {isDarkMode ? '☀' : '☾'}
         </button>
-        <button className="word-share-button" onClick={onNewDocument}>＋ New</button>
+        <div className="window-controls" aria-label="Window controls">
+          <button type="button" aria-label="Minimize window">—</button>
+          <button type="button" aria-label="Restore window">□</button>
+          <button type="button" aria-label="Close window" className="window-controls__close">×</button>
+        </div>
       </div>
 
       <nav className="word-tabs" aria-label="Document tools">
